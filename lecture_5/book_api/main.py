@@ -56,12 +56,25 @@ async def setup_database():
 
 @app.post("/books", response_model=BookSchema)
 async def add_book(book: BookAddSchema, session: SessionDep) -> BookSchema:
+    # Check if the book is existing
+    if book.year is not None:
+        query = select(BookModel).where(
+            func.lower(BookModel.title) == book.title.lower(),
+            func.lower(BookModel.author) == book.author.lower(),
+            BookModel.year == book.year,
+        )
+        result = await session.execute(query)
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="This book already exists.")
+
     # Add a new book into the database
     new_book = BookModel(
         title=book.title,
         author=book.author,
         year=book.year,
     )
+
     session.add(new_book)
     await session.commit()
     await session.refresh(new_book)
@@ -121,6 +134,36 @@ async def change_book(book_id: int, session: SessionDep,
                    title: str | None = Query(default=None),
                    author: str | None = Query(default=None),
                    year: int | None = Query(default=None)):
+    # Check if the book with these values is existing
+    values: dict[str, object] = {}
+    if title is not None:
+        values["title"] = title
+    if author is not None:
+        values["author"] = author
+    if year is not None:
+        values["year"] = year
+
+    if not values:
+        raise HTTPException(status_code=400, detail="Bad Request")
+    # Check if the duplicate exists
+    conditions = []
+    if "title" in values:
+        conditions.append(func.lower(BookModel.title) == values["title"].lower())
+    if "author" in values:
+        conditions.append(func.lower(BookModel.author) == values["author"].lower())
+    if "year" in values:
+        conditions.append(BookModel.year == values["year"])
+
+    if conditions:
+        dup_query = select(BookModel).where(
+            *conditions,
+            BookModel.id != book_id,
+        )
+        dup_result = await session.execute(dup_query)
+        existing = dup_result.scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="This book already exists.")
+
     # Update book details by ID
     values = {}
     if title is not None:
