@@ -44,6 +44,9 @@ class BookAddSchema(BaseModel):
 class BookSchema(BookAddSchema):
     id: int
 
+@app.get("/healthcheck")
+async def healthcheck() -> dict:
+    return {"status": "ok"}
 
 @app.post("/setup_database")
 async def setup_database():
